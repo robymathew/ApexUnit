@@ -5,12 +5,10 @@
  * For full license text, see LICENSE.txt file in the repo root  or https://opensource.org/licenses/BSD-3-Clause
  */
 
-/*
+ /*
  * Class for controlling the test execution flow in APexUnit
  * @author adarsh.ramakrishna@salesforce.com
- */ 
- 
-
+ */
 package com.sforce.cd.apexUnit.client.testEngine;
 
 import org.slf4j.Logger;
@@ -22,34 +20,82 @@ import com.sforce.cd.apexUnit.client.connection.ConnectionHandler;
 import com.sforce.cd.apexUnit.client.utils.ApexClassFetcherUtils;
 import com.sforce.cd.apexUnit.report.ApexReportBean;
 import com.sforce.soap.partner.PartnerConnection;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 public class TestExecutor {
-	private static Logger LOG = LoggerFactory.getLogger(TestExecutor.class);
 
-	public ApexReportBean[] testExecutionFlow() {
-		ConnectionHandler connectionHandler = ConnectionHandler.getConnectionHandlerInstance();
-		PartnerConnection conn = connectionHandler.getConnection();
-		if (conn == null) {
-			ApexUnitUtils.shutDownWithErrMsg("Unable to establish Connection with the org. Suspending the run..");
-		}
-		String[] testClassesAsArray = ApexClassFetcherUtils.constructTestClassesArray(conn);
-		if (LOG.isDebugEnabled()) {
-			ApexClassFetcherUtils.logTheFetchedApexClasses(testClassesAsArray);
-		}
-		if (testClassesAsArray != null && testClassesAsArray.length > 0) {
-			BulkConnection bulkConnection = connectionHandler.getBulkConnection();
-			AsyncBulkApiHandler bulkApiHandler = new AsyncBulkApiHandler();
-			String parentJobId = bulkApiHandler.handleBulkApiFlow(conn, bulkConnection, testClassesAsArray);
+    private static Logger LOG = LoggerFactory.getLogger(TestExecutor.class);
 
-			if (parentJobId != null) {
-				LOG.info("Parent job ID for the submission of the test classes to the Force.com platform is: "
-						+ parentJobId);
-				TestStatusPollerAndResultHandler queryPollerAndResultHandler = new TestStatusPollerAndResultHandler();
-				LOG.info("############################# Now executing - Apex tests.. #############################");
-				return queryPollerAndResultHandler.fetchResultsFromParentJobId(parentJobId, conn);
-			}
-		}
-		return null;
-	}
+    public ApexReportBean[] testExecutionFlow() {
+        ConnectionHandler connectionHandler = ConnectionHandler.getConnectionHandlerInstance();
+        PartnerConnection conn = connectionHandler.getConnection();
+        final int BATCH_SIZE = 200;
+        String parentJobId;
+        List apexReportBean = new ArrayList<ApexReportBean>();
+        if (conn == null) {
+            ApexUnitUtils.shutDownWithErrMsg("Unable to establish Connection with the org. Suspending the run..");
+        }
+        String[] testClassesAsArray = ApexClassFetcherUtils.constructTestClassesArray(conn);
+        if (LOG.isDebugEnabled()) {
+            ApexClassFetcherUtils.logTheFetchedApexClasses(testClassesAsArray);
+        }
+        if (testClassesAsArray != null && testClassesAsArray.length > 0) {
+
+            if (testClassesAsArray.length > 200) {
+                int numOfBatches = 1;
+                int fromIndex = 0;
+                int toIndex = BATCH_SIZE;
+
+                if (testClassesAsArray.length % BATCH_SIZE == 0) {
+                    numOfBatches = testClassesAsArray.length / BATCH_SIZE;
+                } else {
+                    numOfBatches = testClassesAsArray.length / BATCH_SIZE + 1;
+                }
+
+                for (int count = 0; count < numOfBatches; count++) {
+                    String[] testClassesInBatch = Arrays.copyOfRange(testClassesAsArray, fromIndex, toIndex);
+                    BulkConnection bulkConnection = connectionHandler.getBulkConnection();
+                    AsyncBulkApiHandler bulkApiHandler = new AsyncBulkApiHandler();
+                    parentJobId = bulkApiHandler.handleBulkApiFlow(conn, bulkConnection, testClassesInBatch);
+
+                    if (parentJobId != null) {
+                        LOG.info("Parent job ID for the submission of the test classes to the Force.com platform is: "
+                                + parentJobId);
+                        TestStatusPollerAndResultHandler queryPollerAndResultHandler = new TestStatusPollerAndResultHandler();
+                        LOG.info("############################# Now executing - Apex tests.. #############################");
+                        apexReportBean.addAll(Arrays.asList(queryPollerAndResultHandler.fetchResultsFromParentJobId(parentJobId, conn)));
+                    }
+
+                    if (toIndex == testClassesAsArray.length - 1) {
+                        break;
+                    } else {
+                        fromIndex = fromIndex + BATCH_SIZE;
+                        if ((toIndex + BATCH_SIZE) < (testClassesAsArray.length - 1)) {
+                            toIndex = toIndex + BATCH_SIZE;
+                        } else {
+                            toIndex = testClassesAsArray.length - 1;
+                        }
+                    }
+
+                }
+            } else {
+                BulkConnection bulkConnection = connectionHandler.getBulkConnection();
+                AsyncBulkApiHandler bulkApiHandler = new AsyncBulkApiHandler();
+                parentJobId = bulkApiHandler.handleBulkApiFlow(conn, bulkConnection, testClassesAsArray);
+
+                if (parentJobId != null) {
+                    LOG.info("Parent job ID for the submission of the test classes to the Force.com platform is: "
+                            + parentJobId);
+                    TestStatusPollerAndResultHandler queryPollerAndResultHandler = new TestStatusPollerAndResultHandler();
+                    LOG.info("############################# Now executing - Apex tests.. #############################");
+                    apexReportBean.addAll(Arrays.asList(queryPollerAndResultHandler.fetchResultsFromParentJobId(parentJobId, conn)));
+                }
+            }
+
+        }
+        return (ApexReportBean[]) apexReportBean.toArray();
+    }
 
 }
