@@ -42,7 +42,7 @@ public class TestExecutor {
             ApexClassFetcherUtils.logTheFetchedApexClasses(testClassesAsArray);
         }
         if (testClassesAsArray != null && testClassesAsArray.length > 0) {
-
+            LOG.info("Total number of classes: " + testClassesAsArray.length);
             if (testClassesAsArray.length > 200) {
                 int numOfBatches = 1;
                 int fromIndex = 0;
@@ -59,7 +59,7 @@ public class TestExecutor {
                     BulkConnection bulkConnection = connectionHandler.getBulkConnection();
                     AsyncBulkApiHandler bulkApiHandler = new AsyncBulkApiHandler();
                     parentJobId = bulkApiHandler.handleBulkApiFlow(conn, bulkConnection, testClassesInBatch);
-
+                    LOG.info("Running Batch of " + testClassesInBatch.length + " classes");
                     if (parentJobId != null) {
                         LOG.info("Parent job ID for the submission of the test classes to the Force.com platform is: "
                                 + parentJobId);
