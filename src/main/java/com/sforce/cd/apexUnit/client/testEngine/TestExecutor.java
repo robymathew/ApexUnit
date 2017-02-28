@@ -72,14 +72,14 @@ public class TestExecutor {
                         reportBean.addAll(Arrays.asList(queryPollerAndResultHandler.fetchResultsFromParentJobId(parentJobId, conn)));
                     }
 
-                    if (toIndex == testClassesAsArray.length - 1) {
+                    if (toIndex == testClassesAsArray.length) {
                         break;
                     } else {
                         fromIndex = fromIndex + BATCH_SIZE;
-                        if ((toIndex + BATCH_SIZE) < (testClassesAsArray.length - 1)) {
+                        if ((toIndex + BATCH_SIZE) < (testClassesAsArray.length)) {
                             toIndex = toIndex + BATCH_SIZE;
                         } else {
-                            toIndex = testClassesAsArray.length - 1;
+                            toIndex = testClassesAsArray.length;
                         }
                     }
                 }
