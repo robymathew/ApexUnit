@@ -23,6 +23,8 @@ import com.sforce.soap.partner.PartnerConnection;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import org.apache.commons.lang.ArrayUtils;
+import org.testng.collections.Lists;
 
 public class TestExecutor {
 
@@ -33,7 +35,8 @@ public class TestExecutor {
         PartnerConnection conn = connectionHandler.getConnection();
         final int BATCH_SIZE = 200;
         String parentJobId;
-        List apexReportBean = new ArrayList<ApexReportBean>();
+        List<ApexReportBean> reportBean = new ArrayList();
+
         if (conn == null) {
             ApexUnitUtils.shutDownWithErrMsg("Unable to establish Connection with the org. Suspending the run..");
         }
@@ -43,6 +46,7 @@ public class TestExecutor {
         }
         if (testClassesAsArray != null && testClassesAsArray.length > 0) {
             LOG.info("Total number of classes: " + testClassesAsArray.length);
+            
             if (testClassesAsArray.length > 200) {
                 int numOfBatches = 1;
                 int fromIndex = 0;
@@ -64,8 +68,8 @@ public class TestExecutor {
                         LOG.info("Parent job ID for the submission of the test classes to the Force.com platform is: "
                                 + parentJobId);
                         TestStatusPollerAndResultHandler queryPollerAndResultHandler = new TestStatusPollerAndResultHandler();
-                        LOG.info("############################# Now executing - Apex tests.. #############################");
-                        apexReportBean.addAll(Arrays.asList(queryPollerAndResultHandler.fetchResultsFromParentJobId(parentJobId, conn)));
+                        LOG.info("############################# Now executing - Apex tests.. #############################");           
+                        reportBean.addAll(Arrays.asList(queryPollerAndResultHandler.fetchResultsFromParentJobId(parentJobId, conn)));
                     }
 
                     if (toIndex == testClassesAsArray.length - 1) {
@@ -78,8 +82,8 @@ public class TestExecutor {
                             toIndex = testClassesAsArray.length - 1;
                         }
                     }
-
                 }
+                return reportBean.toArray(new ApexReportBean[reportBean.size()]);
             } else {
                 BulkConnection bulkConnection = connectionHandler.getBulkConnection();
                 AsyncBulkApiHandler bulkApiHandler = new AsyncBulkApiHandler();
@@ -90,12 +94,12 @@ public class TestExecutor {
                             + parentJobId);
                     TestStatusPollerAndResultHandler queryPollerAndResultHandler = new TestStatusPollerAndResultHandler();
                     LOG.info("############################# Now executing - Apex tests.. #############################");
-                    apexReportBean.addAll(Arrays.asList(queryPollerAndResultHandler.fetchResultsFromParentJobId(parentJobId, conn)));
+                    return queryPollerAndResultHandler.fetchResultsFromParentJobId(parentJobId, conn);
                 }
             }
 
         }
-        return (ApexReportBean[]) apexReportBean.toArray();
+        return null;
     }
 
 }
