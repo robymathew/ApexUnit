@@ -34,6 +34,7 @@ import com.sforce.cd.apexUnit.client.utils.ApexClassFetcherUtils;
 import com.sforce.cd.apexUnit.report.ApexClassCodeCoverageBean;
 import com.sforce.cd.apexUnit.report.ApexUnitCodeCoverageResults;
 import com.sforce.soap.partner.PartnerConnection;
+import java.util.Arrays;
 
 public class CodeCoverageComputer {
 	private static Logger LOG = LoggerFactory.getLogger(CodeCoverageComputer.class);
@@ -74,7 +75,7 @@ public class CodeCoverageComputer {
 
 		ApexClassCodeCoverageBean[] apexClassCodeCoverageBeans = null;
 		String[] classesAsArray = null;
-
+                final int BATCH_SIZE = 100;
 		/*
 		 * Builder design pattern construct the test class array by building the
 		 * final array using simple objects(arrays) viz. array from Manifest
@@ -95,7 +96,59 @@ public class CodeCoverageComputer {
 		// Do not proceed if no class names are returned from both manifest
 		// files and/or regexes
 		if (classesAsArray != null && classesAsArray.length > 0) {
-			String classArrayAsStringForQuery = processClassArrayForQuery(classesAsArray);
+                    
+                    if (classesAsArray.length > 100) {
+                        int numOfBatches = 1;
+                        int fromIndex = 0;
+                        int toIndex = BATCH_SIZE;
+                        JSONArray recordObject = new JSONArray();
+                        JSONObject responseJsonObject = null;
+                        LOG.info ("Total number of classes: " + classesAsArray.length);
+                        
+                        if (classesAsArray.length % BATCH_SIZE == 0) {
+                            numOfBatches = classesAsArray.length / BATCH_SIZE;
+                        } else {
+                            numOfBatches = classesAsArray.length / BATCH_SIZE + 1;
+                        }
+
+                        for (int count = 0; count < numOfBatches; count++) {
+                            String[] ClassesInBatch = Arrays.copyOfRange(classesAsArray, fromIndex, toIndex);
+                            String classArrayAsStringForQuery = processClassArrayForQuery(ClassesInBatch);
+                            LOG.debug("Classes i nthis query: " + classArrayAsStringForQuery);
+                            LOG.info ("Total number of classes in this query: " + ClassesInBatch.length);
+                            String relativeServiceURL = "/services/data/v" + SUPPORTED_VERSION + "/tooling";
+                            // compute aggregated code coverage
+                            String soqlcc = QueryConstructor.getAggregatedCodeCoverage(classArrayAsStringForQuery);
+
+                            responseJsonObject = WebServiceInvoker.doGet(relativeServiceURL, soqlcc, OAuthTokenGenerator.getOrgToken());
+                            LOG.debug("responseJsonObject says " + responseJsonObject + "\n relativeServiceURL is " + relativeServiceURL
+                                    + "\n soqlcc is " + soqlcc);
+                            String responseStr = responseJsonObject.toJSONString();
+                            LOG.debug(responseStr);
+                            recordObject.addAll((JSONArray) responseJsonObject.get("records"));
+                            LOG.debug("Total records so far : " + recordObject.size());
+                            
+                            if (toIndex == classesAsArray.length) {
+                                break;
+                            } else {
+                                fromIndex = fromIndex + BATCH_SIZE;
+                                if ((toIndex + BATCH_SIZE) < (classesAsArray.length)) {
+                                    toIndex = toIndex + BATCH_SIZE;
+                                } else {
+                                    toIndex = classesAsArray.length;
+                                }
+                            }
+                        }
+
+                        if (recordObject.size() > 0) {
+                            apexClassCodeCoverageBeans = processJSONResponseAndConstructCodeCoverageBeans(connection, recordObject);
+                        }
+                        if (apexClassCodeCoverageBeans == null) {
+                            ApexUnitUtils.shutDownWithErrMsg("Code coverage metrics not computed. Null object returned while processing the JSON response from the Tooling API");
+                        }
+
+                    }else{
+                        String classArrayAsStringForQuery = processClassArrayForQuery(classesAsArray);
 			String relativeServiceURL = "/services/data/v" + SUPPORTED_VERSION + "/tooling";
 			// compute aggregated code coverage
 			String soqlcc = QueryConstructor.getAggregatedCodeCoverage(classArrayAsStringForQuery);
@@ -104,14 +157,18 @@ public class CodeCoverageComputer {
 			responseJsonObject = WebServiceInvoker.doGet(relativeServiceURL, soqlcc, OAuthTokenGenerator.getOrgToken());
 			LOG.debug("responseJsonObject says " + responseJsonObject + "\n relativeServiceURL is " + relativeServiceURL
 					+ "\n soqlcc is " + soqlcc);
+                        String responseStr = responseJsonObject.toJSONString();
+                        LOG.debug(responseStr);
 			if (responseJsonObject != null) {
 				apexClassCodeCoverageBeans = processJSONResponseAndConstructCodeCoverageBeans(connection,
-						responseJsonObject);
+						(JSONArray)responseJsonObject.get("records"));
 			}
 			if (apexClassCodeCoverageBeans == null) {
 				ApexUnitUtils.shutDownWithErrMsg(
 						"Code coverage metrics not computed. Null object returned while processing the JSON response from the Tooling API");
 			}
+                    }
+                        
 		} else {
 			ApexUnitUtils.shutDownWithErrMsg("No/Invalid Apex source classes mentioned in manifest file and/or "
 					+ "regex pattern for ApexSourceClassPrefix didn't return any Apex source class names from the org");
@@ -150,13 +207,11 @@ public class CodeCoverageComputer {
 	 * @return code coverage result(beans) as array
 	 */
 	private ApexClassCodeCoverageBean[] processJSONResponseAndConstructCodeCoverageBeans(PartnerConnection connection,
-			JSONObject responseJsonObject) {
+			JSONArray aggregateRecordObject) {
 		int classCounter = 0;
 		int coveredLinesForTheTeam = 0;
 		int unCoveredLinesForTheTeam = 0;
-		String responseStr = responseJsonObject.toJSONString();
-		LOG.debug(responseStr);
-		JSONArray recordObject = (JSONArray) responseJsonObject.get("records");
+		JSONArray recordObject = aggregateRecordObject;
 		if (recordObject != null && recordObject.size() > 0) {
 			ApexClassCodeCoverageBean[] apexClassCodeCoverageBeans = new ApexClassCodeCoverageBean[recordObject.size()];
 			for (int i = 0; i < recordObject.size(); ++i) {
